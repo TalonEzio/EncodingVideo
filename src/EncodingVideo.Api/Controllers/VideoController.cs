@@ -71,7 +71,7 @@ namespace EncodingVideo.Api.Controllers
                         Quality = VideoQuality.FullHd,
                         Status = VideoStatus.Encoding,
                         Size = video.Length,
-                        
+
                     });
                 }
                 else
@@ -81,7 +81,9 @@ namespace EncodingVideo.Api.Controllers
 
                 await context.SaveChangesAsync();
 
-                ffmpeg.Complete += Ffmpeg_Complete;
+
+                ffmpeg.Complete += Ffmpeg_Complete_Using_Context;
+                ffmpeg.Complete += Ffmpeg_Complete_Using_AdoNet;
 
                 //CPU Bound, prefer Thread to Task
                 new Thread(
@@ -117,7 +119,7 @@ namespace EncodingVideo.Api.Controllers
             return File(memory, "video/mp4", video.FileName);
         }
 
-        private static async void Ffmpeg_Complete(object? sender, FFmpeg.NET.Events.ConversionCompleteEventArgs e)
+        private static async void Ffmpeg_Complete_Using_AdoNet(object? sender, FFmpeg.NET.Events.ConversionCompleteEventArgs e)
         {
             await using var connection =
                 new SqlConnection(
@@ -147,6 +149,18 @@ namespace EncodingVideo.Api.Controllers
             await updateCmd.ExecuteNonQueryAsync();
 
             await connection.CloseAsync();
+        }
+
+        private async void Ffmpeg_Complete_Using_Context(object? sender,
+            FFmpeg.NET.Events.ConversionCompleteEventArgs e)
+        {
+            var fileName = Path.GetFileName(e.Output.Name);
+
+            var video = await context.Videos!.FirstOrDefaultAsync(x => x.FileName.Equals(fileName));
+            if (video == null) return;
+            video.Status = VideoStatus.Completed;
+
+            await context.SaveChangesAsync();
         }
     }
 
